@@ -36,7 +36,7 @@
  *                   └──────────────────────┘
  *
  *   步骤说明：
- *   (1) 嵌入：文本 → 向量（OpenAI API）
+ *   (1) 嵌入：文本 → 向量（DeepSeek API）
  *   (2) 存储/检索：向量 → pgvector（PostgreSQL）
  *   (3) 召回：找到最相似的 K 条记录
  *   (4) 生成：把资料和问题一起喂给 AI
@@ -67,7 +67,7 @@ export async function initRAG(): Promise<void> {
  *
  * 流程：
  * 1. 用分块器把长文本切成小块
- * 2. 每一块分别发给 OpenAI，生成向量
+ * 2. 每一块分别发给 DeepSeek，生成向量
  * 3. 把"文本块 + 向量"逐条存入 PostgreSQL
  *
  * 为什么需要分块？

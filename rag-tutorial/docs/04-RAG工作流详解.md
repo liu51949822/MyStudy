@@ -160,7 +160,7 @@ RAG 是 Retrieval-Augmented Generation 的缩写，
 
 > **存入和查询必须使用同一个模型！**
 
-如果用 text-embedding-3-small 存数据，
+如果用 deepseek-embedding 存数据，
 就必须用同一个模型来转问题。
 
 不同模型的向量"坐标系"不同，无法混用。
@@ -182,7 +182,7 @@ const similarDocs = await searchSimilarDocuments(questionEmbedding, 3);
 ### 要点 3：Token 限制
 
 GPT 模型有"上下文窗口"限制：
-- gpt-4o-mini：128K tokens ≈ 10 万汉字
+- deepseek-chat：128K tokens ≈ 10 万汉字
 - 拼接的资料太多可能超出限制
 - 所以限制 K 值也是控制上下文大小
 

@@ -4,36 +4,23 @@
  * ============================================
  *
  * 这个文件负责调用 OpenAI 的 API 来生成"嵌入向量"。
+ * 以及通过 MCP 工具系统实现"AI 自主调用工具"。
  *
- * 什么是嵌入向量（Embedding）？
- * --------------------------------------------
- * 简单说：把文字变成一串数字（向量）。
+ * 什么是 MCP 工具调用？
+ * 普通的 AI：你说一句，AI 答一句
+ * MCP 工具：AI 可以决定"我需要查一下资料"，然后自动调用工具
  *
- * 比如：
- *   "苹果很好吃" → [0.001, -0.023, 0.457, ...]  (1536 个数字)
- *   "我喜欢吃水果" → [0.015, -0.019, 0.402, ...] (1536 个数字)
- *
- * 神奇的地方：意思相近的文本，它们的向量也"靠得很近"。
- * 这就是 RAG 能工作的数学基础！
- *
- * 用到的模型：
- * - text-embedding-3-small: OpenAI 的嵌入模型
- *   - 输出 1536 维向量
- *   - 性价比极高，适合入门
- * - gpt-4o-mini: 轻量级 GPT 模型，用于生成最终答案
- *   - 速度快，成本低，适合教学场景
+ * 流程：
+ * 1. 用户提问 → 发给 AI
+ * 2. AI 说：我需要用 rag_search 工具查资料
+ * 3. 系统执行工具，把结果返回给 AI
+ * 4. AI 基于工具结果生成回答
  */
 
 import OpenAI from "openai";
 
 /**
  * OpenAI 客户端（懒加载）
- *
- * 为什么不在模块顶层直接 new OpenAI()？
- * 因为 Next.js 在构建时会执行顶层代码，
- * 如果 .env.local 还没配好，就会报错。
- *
- * 懒加载保证了：只在真正需要调用 API 时才创建客户端。
  */
 function getOpenAI(): OpenAI {
   return new OpenAI({
@@ -43,85 +30,52 @@ function getOpenAI(): OpenAI {
 
 /**
  * 生成文本的嵌入向量
- *
- * @param text - 要生成向量的文本
- * @returns 1536 维的向量数组
- *
- * 调用流程：
- * 1. 把文本发给 OpenAI 的 embedding API
- * 2. OpenAI 返回一个向量（一堆数字）
- * 3. 我们用这个向量去做相似度搜索
  */
 export async function getEmbedding(text: string): Promise<number[]> {
     const response = await getOpenAI().embeddings.create({
     model: "text-embedding-3-small",
     input: text,
   });
-
   return response.data[0].embedding;
 }
 
 /**
- * 用 RAG 方式向 AI 提问
+ * 用 RAG + MCP 工具方式向 AI 提问
  *
- * 这就是 RAG 的核心！
- *
- * 传统的 AI 提问（无历史）：
- *   Q: "什么是 RAG？"
- *   A: "RAG 是检索增强生成..."
- *   Q: "它有什么优点？"
- *   A: "它？什么它？" ← AI 不知道上下文
- *
- * RAG + 历史（多轮对话）：
- *   Q: "什么是 RAG？"
- *   历史：[上一轮 Q&A]
- *   Q: "它有什么优点？"
- *   AI 看历史 → "它" = RAG → 正确回答
+ * 这个版本支持 AI 自主调用 MCP 工具。
+ * 流程：
+ *   Round 1:
+ *     用户问题 + 可用工具 → AI
+ *     AI → "我查一下资料" → 调用工具
+ *   Round 2:
+ *     用户问题 + 工具结果 → AI
+ *     AI → 生成最终回答
  *
  * @param question - 用户的问题
  * @param context - 从知识库检索到的相关文档
- * @param history - 可选的对话历史（用于多轮对话）
+ * @param history - 可选的对话历史
+ * @param useTools - 是否启用 MCP 工具（默认 true）
  * @returns AI 生成的回答
  */
 export async function askAIWithContext(
   question: string,
   context: string,
-  history?: { role: string; content: string }[]
+  history?: { role: string; content: string }[],
+  useTools: boolean = true
 ): Promise<string> {
-  /**
-   * System Prompt（系统提示词）
-   *
-   * 这个提示词告诉 AI 应该扮演什么角色、
-   * 以及如何回答问题。
-   *
-   * 关键点："基于以下资料来回答"——这就是 RAG 的核心约束。
-   * AI 只能基于我们给它的资料来回答，不能自己瞎编。
-   */
-
-  /**
-   * 构造消息数组
-   *
-   * 多轮对话的关键：把历史消息插入到 system 和 user 之间。
-   *
-   * 最终发给 AI 的消息结构：
-   *   System: 你是一个知识库助手...
-   *   Assistant: RAG 是检索增强生成...  ← 历史
-   *   User: 它有什么优点？              ← 当前问题
-   *   === 参考资料 ===                  ← 检索到的知识库内容
-   *   RAG 的优点包括...
-   *
-   * 这样 AI 就能看到上下文，理解"它"指代什么。
-   */
   const messages: any[] = [
     {
       role: "system",
       content: `你是一个知识库助手。请基于以下资料来回答用户的问题。
 如果资料里没有相关信息，请说"资料库中未找到相关信息"。
-回答要简洁、准确。注意对话的上下文，理解用户的追问意图。`,
+回答要简洁、准确。注意对话的上下文。
+
+在回答前，你可以使用 rag_search 工具来补充查询知识库。
+如果你觉得当前资料不够，随时可以调用工具获取更多信息。`,
     },
   ];
 
-  // 插入历史消息（如果有）
+  // 插入历史消息
   if (history && history.length > 0) {
     const validHistory = history.filter(
       (m) => m.role === "user" || m.role === "assistant"
@@ -135,13 +89,74 @@ export async function askAIWithContext(
     content: `=== 参考资料 ===\n${context}\n\n=== 用户问题 ===\n${question}`,
   });
 
+  // 如果启用工具，加载工具定义
+  let tools: any[] | undefined;
+  if (useTools) {
+    const { getToolDefinitions } = await import("@/lib/tools/tools");
+    const mcpTools = getToolDefinitions();
+    if (mcpTools.length > 0) {
+      tools = mcpTools;
+      console.log("🔧 已加载 MCP 工具:", mcpTools.length);
+    }
+  }
+
+  // 第一轮：发送消息给 AI，如果有工具则带上
   const response = await getOpenAI().chat.completions.create({
+    model: "gpt-4o-mini",
+    messages,
+    tools,
+    tool_choice: "auto",
+    temperature: 0.3,
+  });
+
+  const responseMessage = response.choices[0]?.message;
+
+  // 如果 AI 没有调用工具，直接返回回答
+  if (!responseMessage?.tool_calls || responseMessage.tool_calls.length === 0) {
+    return responseMessage?.content || "抱歉，无法生成回答。";
+  }
+
+  // AI 调用了工具！我们需要：
+  // 1. 把 AI 的工具调用消息加到历史
+  // 2. 执行每个工具
+  // 3. 把工具结果加回消息
+  // 4. 让 AI 基于工具结果生成最终回答
+
+  console.log(`🔧 AI 调用了 ${responseMessage.tool_calls.length} 个工具`);
+
+  // 把第一轮的消息（含工具调用）加到消息列表
+  messages.push(responseMessage);
+
+  // 逐个执行工具
+  const { executeTool } = await import("@/lib/tools/tools");
+  for (const toolCall of responseMessage.tool_calls) {
+    const args = JSON.parse(toolCall.function.arguments || "{}");
+    console.log(`🔧 执行工具: ${toolCall.function.name}`);
+    try {
+      const result = await executeTool(toolCall.function.name, args);
+      // 把工具执行结果加回消息
+      messages.push({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: JSON.stringify(result),
+      });
+    } catch (error: any) {
+      messages.push({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: `工具执行失败: ${error.message}`,
+      });
+    }
+  }
+
+  // 第二轮：AI 基于工具结果生成最终回答
+  const finalResponse = await getOpenAI().chat.completions.create({
     model: "gpt-4o-mini",
     messages,
     temperature: 0.3,
   });
 
-  return response.choices[0]?.message?.content || "抱歉，无法生成回答。";
+  return finalResponse.choices[0]?.message?.content || "抱歉，无法生成回答。";
 }
 
 export { getOpenAI };

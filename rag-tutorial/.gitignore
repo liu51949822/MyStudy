@@ -1,0 +1,12 @@
+/node_modules
+/.next
+/.pnp
+.pnp.js
+/out
+/build
+.DS_Store
+*.pem
+npm-debug.log*
+.env
+.env.local
+.env.*.local

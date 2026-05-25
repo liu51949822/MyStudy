@@ -82,7 +82,7 @@ registerTool({
 ### AI 调用工具 (embeddings.ts)
 
 ```typescript
-// OpenAI 的 function calling 格式
+// DeepSeek 的 function calling 格式
 const response = await openai.chat.completions.create({
   messages,
   tools: [

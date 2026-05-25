@@ -3,7 +3,7 @@
  * 嵌入向量层 — lib/embeddings.ts
  * ============================================
  *
- * 这个文件负责调用 OpenAI 的 API 来生成"嵌入向量"。
+ * 这个文件负责调用 DeepSeek 的 API 来生成"嵌入向量"。
  *
  * 什么是嵌入向量（Embedding）？
  * --------------------------------------------
@@ -17,7 +17,7 @@
  * 这就是 RAG 能工作的数学基础！
  *
  * 用到的模型：
- * - deepseek-embedding: OpenAI 的嵌入模型
+ * - deepseek-embedding: DeepSeek 的嵌入模型
  *   - 输出 1536 维向量
  *   - 性价比极高，适合入门
  * - deepseek-chat: 轻量级 GPT 模型，用于生成最终答案
@@ -27,7 +27,7 @@
 import OpenAI from "openai";
 
 /**
- * OpenAI 客户端（懒加载）
+ * DeepSeek 客户端（懒加载）
  *
  * 为什么不在模块顶层直接 new OpenAI()？
  * 因为 Next.js 在构建时会执行顶层代码，
@@ -49,7 +49,7 @@ function getOpenAI(): OpenAI {
  * @returns 1536 维的向量数组
  *
  * 调用流程：
- * 1. 把文本发给 OpenAI 的 embedding API
+ * 1. 把文本发给 DeepSeek 的 embedding API
  * 2. OpenAI 返回一个向量（一堆数字）
  * 3. 我们用这个向量去做相似度搜索
  */

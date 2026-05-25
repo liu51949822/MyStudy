@@ -12,6 +12,7 @@
  * - pgvector 扩展：让 PostgreSQL 支持向量存储和相似度搜索
  * - 连接池：复用数据库连接，提高性能
  * - 单例模式：全局只维护一个连接池
+ * - 全文搜索：使用 tsvector + GIN 索引实现关键词搜索
  */
 
 import { Pool } from "pg";
@@ -34,15 +35,10 @@ const pool = new Pool({
  * 它会：
  * 1. 启用 pgvector 扩展（让 PG 支持向量运算）
  * 2. 创建 documents 表（存储文本和对应的向量）
+ * 3. 创建全文搜索索引（关键词搜索）
  *
  * pgvector 是 PostgreSQL 的向量插件，
  * 它让我们可以在 SQL 里直接算向量的余弦相似度。
- *
- * documents 表的字段：
- * - id:       自增主键
- * - content:  原始文本内容
- * - embedding: 文本的向量表示（1536 维）
- *              1536 是 OpenAI text-embedding-3-small 模型的输出维度
  */
 export async function initDB(): Promise<void> {
   const client = await pool.connect();
@@ -59,7 +55,27 @@ export async function initDB(): Promise<void> {
       )
     `);
 
-    console.log("✅ 数据库初始化成功");
+    // 添加全文搜索列（如果不存在）
+    // tsvector 是 PostgreSQL 的全文搜索数据类型
+    // 它把文本预处理成"词向量"，方便快速关键词匹配
+    await client.query(`
+      ALTER TABLE documents
+      ADD COLUMN IF NOT EXISTS content_tsv tsvector
+      GENERATED ALWAYS AS (to_tsvector('simple', coalesce(content, ''))) STORED
+    `);
+
+    // 创建 GIN 索引加速全文搜索
+    // GIN (Generalized Inverted Index) 是 PostgreSQL 的倒排索引
+    // 倒排索引：记录"每个词出现在哪些文档中"
+    // 和"正排索引"（记录"每个文档包含哪些词"）相反
+    // 倒排索引让关键词搜索从 O(n) 变成 O(1)
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_documents_fts
+      ON documents
+      USING GIN(content_tsv)
+    `);
+
+    console.log("✅ 数据库初始化成功（含全文搜索索引）");
   } catch (error) {
     console.error("❌ 数据库初始化失败:", error);
     throw error;
@@ -70,6 +86,9 @@ export async function initDB(): Promise<void> {
 
 /**
  * 插入文档（文本 + 向量）到数据库
+ *
+ * content_tsv 列是 GENERATED ALWAYS 的，
+ * 会自动根据 content 生成，不需要手动插入。
  */
 export async function insertDocument(
   content: string,
@@ -82,18 +101,10 @@ export async function insertDocument(
 }
 
 /**
- * 向量相似度搜索
+ * 纯向量相似度搜索
  *
  * 用余弦距离找到与目标向量最相似的 K 条记录。
- *
- * 什么是向量相似度搜索？
- * 想象一下：我们把"猫"和"狗"这两个词映射到向量空间，
- * 它们会离得很近（都是动物），而和"冰箱"离得很远。
- * 这里我们做的就是找"最接近的邻居"。
- *
- * 用到的 SQL 特性：
- * - <=> 操作符：pgvector 提供的余弦距离运算符
- * - ORDER BY ... LIMIT：取距离最小的 K 条
+ * 适合"语义匹配"（意思相近的文本）。
  */
 export async function searchSimilarDocuments(
   embedding: number[],
@@ -107,6 +118,73 @@ export async function searchSimilarDocuments(
     LIMIT $2
     `,
     [embedding, limit]
+  );
+
+  return result.rows;
+}
+
+/**
+ * 混合搜索 —— 向量搜索 + 关键词搜索
+ *
+ * 为什么需要混合搜索？
+ * 纯向量搜索擅长"语义匹配"：
+ *   "请假流程" → "年假审批"（意思相近，但关键词不同）
+ *
+ * 纯关键词搜索擅长"精确匹配"：
+ *   "工号 10086" → "工号 10086"（精确匹配）
+ *
+ * 混合搜索两者结合，效果更好。
+ *
+ * 使用 RRF (Reciprocal Rank Fusion) 算法合并结果：
+ *   1. 向量搜索取前 10 条
+ *   2. 关键词搜索取前 10 条
+ *   3. 对每条结果计算 RRF 分数：1 / (60 + rank)
+ *   4. 按总分排序，取前 K 条
+ *
+ * @param embedding - 问题的向量
+ * @param queryText - 问题的原文（用于关键词搜索）
+ * @param topK - 最终返回的结果数
+ * @returns 合并后的结果
+ */
+export async function hybridSearch(
+  embedding: number[],
+  queryText: string,
+  topK: number = 5
+): Promise<{ id: number; content: string; score: number }[]> {
+  const result = await pool.query(
+    `
+    WITH vector_results AS (
+      SELECT id, content, embedding <=> $1::vector AS vector_dist
+      FROM documents
+      ORDER BY vector_dist ASC
+      LIMIT 10
+    ),
+    keyword_results AS (
+      SELECT id, content,
+        ts_rank(content_tsv, plainto_tsquery('simple', $2)) AS kw_score
+      FROM documents
+      WHERE content_tsv @@ plainto_tsquery('simple', $2)
+      ORDER BY kw_score DESC
+      LIMIT 10
+    ),
+    combined AS (
+      -- 向量搜索结果（RRF 分数）
+      SELECT id, content,
+        1.0 / (60.0 + ROW_NUMBER() OVER (ORDER BY vector_dist ASC)) AS score
+      FROM vector_results
+      UNION
+      -- 关键词搜索结果（RRF 分数）
+      SELECT id, content,
+        1.0 / (60.0 + ROW_NUMBER() OVER (ORDER BY kw_score DESC)) AS score
+      FROM keyword_results
+    )
+    SELECT id, content, SUM(score) AS score
+    FROM combined
+    GROUP BY id, content
+    ORDER BY score DESC
+    LIMIT $3
+    `,
+    [embedding, queryText, topK]
   );
 
   return result.rows;

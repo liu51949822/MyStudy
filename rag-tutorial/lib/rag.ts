@@ -43,7 +43,7 @@
  */
 
 import { getEmbedding, askAIWithContext } from "./embeddings";
-import { insertDocument, searchSimilarDocuments, initDB } from "./db";
+import { insertDocument, searchSimilarDocuments, hybridSearch, initDB } from "./db";
 import { chunkText, type ChunkStrategy } from "./chunker";
 import {
   createSession,
@@ -145,9 +145,13 @@ export async function query(
   console.log("🔮 正在生成问题的嵌入向量...");
   const questionEmbedding = await getEmbedding(question);
 
-  // 步骤 2: 搜索最相似的 3 条记录
-  console.log("📚 正在搜索知识库...");
-  const similarDocs = await searchSimilarDocuments(questionEmbedding, 3);
+  // 步骤 2: 混合搜索 —— 向量搜索 + 关键词搜索
+  // 为什么用混合搜索？
+  // - 纯向量搜索：找到意思最接近的（语义匹配）
+  // - 纯关键词搜索：找到字面匹配的（精确匹配）
+  // - 混合搜索：两者结合，效果更好
+  console.log("📚 正在进行混合搜索...");
+  const similarDocs = await hybridSearch(questionEmbedding, question, 5);
 
   if (similarDocs.length === 0) {
     const answer = "知识库中还没有内容，请先存入一些文本。";
@@ -157,7 +161,7 @@ export async function query(
     return { answer, sources: [], sessionId };
   }
 
-  // 步骤 3: 拼接参考资料
+  // 步骤 3: 拼接参考资料（前 3 条）
   const context = similarDocs.map((doc) => doc.content).join("\n---\n");
 
   // 步骤 4: AI 基于资料和历史回答问题

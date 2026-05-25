@@ -3,7 +3,7 @@
  * 嵌入向量层 — lib/embeddings.ts
  * ============================================
  *
- * 这个文件负责调用 OpenAI 的 API 来生成"嵌入向量"。
+ * 这个文件负责调用 DeepSeek 的 API 来生成"嵌入向量"。
  * 以及通过 MCP 工具系统实现"AI 自主调用工具"。
  *
  * 什么是 MCP 工具调用？
@@ -20,7 +20,7 @@
 import OpenAI from "openai";
 
 /**
- * OpenAI 客户端（懒加载）
+ * DeepSeek 客户端（懒加载）
  */
 function getOpenAI(): OpenAI {
   return new OpenAI({

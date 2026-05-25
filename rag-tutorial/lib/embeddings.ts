@@ -24,7 +24,8 @@ import OpenAI from "openai";
  */
 function getOpenAI(): OpenAI {
   return new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    baseURL: "https://api.deepseek.com",
   });
 }
 
@@ -33,7 +34,7 @@ function getOpenAI(): OpenAI {
  */
 export async function getEmbedding(text: string): Promise<number[]> {
     const response = await getOpenAI().embeddings.create({
-    model: "text-embedding-3-small",
+    model: "deepseek-embedding",
     input: text,
   });
   return response.data[0].embedding;
@@ -102,7 +103,7 @@ export async function askAIWithContext(
 
   // 第一轮：发送消息给 AI，如果有工具则带上
   const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "deepseek-chat",
     messages,
     tools,
     tool_choice: "auto",
@@ -151,7 +152,7 @@ export async function askAIWithContext(
 
   // 第二轮：AI 基于工具结果生成最终回答
   const finalResponse = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "deepseek-chat",
     messages,
     temperature: 0.3,
   });

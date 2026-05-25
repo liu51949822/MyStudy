@@ -54,8 +54,8 @@ export async function ingest(content: string): Promise<string> {
 ### 背后的网络请求
 
 ```
-你的服务器 ──── 1. POST embedding API ───────▶ OpenAI
-             ◀─── 返回 [0.025, -0.613, ...] ──  OpenAI
+你的服务器 ──── 1. POST embedding API ───────▶ DeepSeek
+             ◀─── 返回 [0.025, -0.613, ...] ──  DeepSeek
              
 你的服务器 ──── 2. INSERT INTO documents ────▶ PostgreSQL
              ◀─── INSERT 0 1 ─────────────────  PostgreSQL

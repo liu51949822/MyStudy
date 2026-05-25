@@ -17,10 +17,10 @@
  * 这就是 RAG 能工作的数学基础！
  *
  * 用到的模型：
- * - text-embedding-3-small: OpenAI 的嵌入模型
+ * - deepseek-embedding: OpenAI 的嵌入模型
  *   - 输出 1536 维向量
  *   - 性价比极高，适合入门
- * - gpt-4o-mini: 轻量级 GPT 模型，用于生成最终答案
+ * - deepseek-chat: 轻量级 GPT 模型，用于生成最终答案
  *   - 速度快，成本低，适合教学场景
  */
 
@@ -37,7 +37,8 @@ import OpenAI from "openai";
  */
 function getOpenAI(): OpenAI {
   return new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    baseURL: "https://api.deepseek.com",
   });
 }
 
@@ -54,7 +55,7 @@ function getOpenAI(): OpenAI {
  */
 export async function getEmbedding(text: string): Promise<number[]> {
     const response = await getOpenAI().embeddings.create({
-    model: "text-embedding-3-small",
+    model: "deepseek-embedding",
     input: text,
   });
 
@@ -136,7 +137,7 @@ export async function askAIWithContext(
   });
 
   const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "deepseek-chat",
     messages,
     temperature: 0.3,
   });

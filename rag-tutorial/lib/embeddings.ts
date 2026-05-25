@@ -66,27 +66,27 @@ export async function getEmbedding(text: string): Promise<number[]> {
  *
  * 这就是 RAG 的核心！
  *
- * 传统的 AI 提问：
+ * 传统的 AI 提问（无历史）：
  *   Q: "什么是 RAG？"
- *   A: "RAG 是检索增强生成..."（模型凭记忆回答）
+ *   A: "RAG 是检索增强生成..."
+ *   Q: "它有什么优点？"
+ *   A: "它？什么它？" ← AI 不知道上下文
  *
- * RAG 的方式：
- *   1. 先去"知识库"里搜索相关文档
- *   2. 把搜到的文档作为"参考资料"放进提示词
- *   3. 让 AI 基于这些资料来回答
- *
- * 好处：
- * - 回答更准确，有依据
- * - 可以结合私有知识（公司文档、产品手册等）
- * - 减少 AI 胡编乱造（幻觉）
+ * RAG + 历史（多轮对话）：
+ *   Q: "什么是 RAG？"
+ *   历史：[上一轮 Q&A]
+ *   Q: "它有什么优点？"
+ *   AI 看历史 → "它" = RAG → 正确回答
  *
  * @param question - 用户的问题
  * @param context - 从知识库检索到的相关文档
+ * @param history - 可选的对话历史（用于多轮对话）
  * @returns AI 生成的回答
  */
 export async function askAIWithContext(
   question: string,
-  context: string
+  context: string,
+  history?: { role: string; content: string }[]
 ): Promise<string> {
   /**
    * System Prompt（系统提示词）
@@ -97,22 +97,48 @@ export async function askAIWithContext(
    * 关键点："基于以下资料来回答"——这就是 RAG 的核心约束。
    * AI 只能基于我们给它的资料来回答，不能自己瞎编。
    */
+
+  /**
+   * 构造消息数组
+   *
+   * 多轮对话的关键：把历史消息插入到 system 和 user 之间。
+   *
+   * 最终发给 AI 的消息结构：
+   *   System: 你是一个知识库助手...
+   *   Assistant: RAG 是检索增强生成...  ← 历史
+   *   User: 它有什么优点？              ← 当前问题
+   *   === 参考资料 ===                  ← 检索到的知识库内容
+   *   RAG 的优点包括...
+   *
+   * 这样 AI 就能看到上下文，理解"它"指代什么。
+   */
+  const messages: any[] = [
+    {
+      role: "system",
+      content: `你是一个知识库助手。请基于以下资料来回答用户的问题。
+如果资料里没有相关信息，请说"资料库中未找到相关信息"。
+回答要简洁、准确。注意对话的上下文，理解用户的追问意图。`,
+    },
+  ];
+
+  // 插入历史消息（如果有）
+  if (history && history.length > 0) {
+    const validHistory = history.filter(
+      (m) => m.role === "user" || m.role === "assistant"
+    );
+    messages.push(...validHistory);
+  }
+
+  // 添加当前问题和参考资料
+  messages.push({
+    role: "user",
+    content: `=== 参考资料 ===\n${context}\n\n=== 用户问题 ===\n${question}`,
+  });
+
   const response = await getOpenAI().chat.completions.create({
     model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "system",
-        content: `你是一个知识库助手。
-请基于以下资料来回答用户的问题。
-如果资料里没有相关信息，请说"资料库中未找到相关信息"。
-回答要简洁、准确。`,
-      },
-      {
-        role: "user",
-        content: `=== 参考资料 ===\n${context}\n\n=== 用户问题 ===\n${question}`,
-      },
-    ],
-    temperature: 0.3, // 较低的温度 = 更确定的回答，减少幻觉
+    messages,
+    temperature: 0.3,
   });
 
   return response.choices[0]?.message?.content || "抱歉，无法生成回答。";

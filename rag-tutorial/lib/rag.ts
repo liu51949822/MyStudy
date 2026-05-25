@@ -45,6 +45,12 @@
 import { getEmbedding, askAIWithContext } from "./embeddings";
 import { insertDocument, searchSimilarDocuments, initDB } from "./db";
 import { chunkText, type ChunkStrategy } from "./chunker";
+import {
+  createSession,
+  getSession,
+  addMessage,
+  getRecentMessages,
+} from "./chat-history";
 
 /**
  * 初始化 RAG 系统
@@ -72,10 +78,6 @@ export async function initRAG(): Promise<void> {
  * @param content  - 要存入的文本内容
  * @param strategy - 分块策略（默认 "recursive"）
  * @returns 成功消息（含块数）
- *
- * 教学示例：
- *   await ingest("这是一段很长的文本...", "paragraph")
- *   // → ✅ 已成功存入 3 个文本块！
  */
 export async function ingest(
   content: string,
@@ -106,21 +108,38 @@ export async function ingest(
  * 1. 把问题转换成向量
  * 2. 在数据库中找最相似的 K 条记录
  * 3. 把找到的文本拼接成"参考资料"
- * 4. 把"参考资料 + 问题"一起发给 AI
- * 5. AI 基于参考资料回答
+ * 4. 把"参考资料 + 问题 + 历史对话"一起发给 AI
+ * 5. AI 基于参考资料和历史回答
+ * 6. 保存本轮问答到历史记录
  *
- * @param question - 用户的问题
- * @returns AI 的回答
- *
- * 教学示例：
- *   await query("什么是 RAG？")
- *   // → AI 会基于知识库中的内容回答
+ * @param question  - 用户的问题
+ * @param sessionId - 可选的会话 ID（用于多轮对话）
+ * @returns AI 的回答、相关来源、会话 ID
  */
-export async function query(question: string): Promise<{
+export async function query(
+  question: string,
+  sessionId?: string
+): Promise<{
   answer: string;
   sources: string[];
+  sessionId: string;
 }> {
   console.log("🔍 正在处理查询...");
+
+  // 步骤 0: 会话管理
+  // 如果有 sessionId 且存在，使用已有的；否则创建新的
+  if (!sessionId || !getSession(sessionId)) {
+    sessionId = createSession();
+    console.log(`🆕 创建新会话: ${sessionId}`);
+  } else {
+    console.log(`💬 继续会话: ${sessionId}`);
+  }
+
+  // 获取最近的历史消息（最多 6 条 = 3 轮对话）
+  const history = getRecentMessages(sessionId, 6);
+  if (history.length > 0) {
+    console.log(`📝 加载了 ${history.length} 条历史消息`);
+  }
 
   // 步骤 1: 把问题转换成向量（和存入时用同样的模型）
   console.log("🔮 正在生成问题的嵌入向量...");
@@ -131,22 +150,29 @@ export async function query(question: string): Promise<{
   const similarDocs = await searchSimilarDocuments(questionEmbedding, 3);
 
   if (similarDocs.length === 0) {
-    return {
-      answer: "知识库中还没有内容，请先存入一些文本。",
-      sources: [],
-    };
+    const answer = "知识库中还没有内容，请先存入一些文本。";
+    // 即使回答为空，也保存到历史
+    addMessage(sessionId, "user", question);
+    addMessage(sessionId, "assistant", answer);
+    return { answer, sources: [], sessionId };
   }
 
   // 步骤 3: 拼接参考资料
   const context = similarDocs.map((doc) => doc.content).join("\n---\n");
 
-  // 步骤 4: AI 基于资料回答问题
+  // 步骤 4: AI 基于资料和历史回答问题
   console.log("🤖 AI 正在思考...");
-  const answer = await askAIWithContext(question, context);
+  const answer = await askAIWithContext(question, context, history);
 
-  // 返回回答和相关来源
+  // 步骤 5: 保存本轮问答到历史
+  addMessage(sessionId, "user", question);
+  addMessage(sessionId, "assistant", answer);
+  console.log("💾 已保存到对话历史");
+
+  // 返回回答、相关来源和会话 ID
   return {
     answer,
     sources: similarDocs.map((doc) => doc.content),
+    sessionId,
   };
 }

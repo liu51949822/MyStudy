@@ -1,57 +1,65 @@
 "use client";
 
-import { useState, useRef, FormEvent } from "react";
+import { useState, useRef, FormEvent, useEffect } from "react";
+
+interface Message {
+  role: "user" | "assistant" | "system";
+  content: string;
+  sources?: string[];
+}
 
 export default function Home() {
-  const [ingestText, setIngestText] = useState("");
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [sources, setSources] = useState<string[]>([]);
-  const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [ingestText, setIngestText] = useState("");
+  const [ingestMessage, setIngestMessage] = useState("");
+  const [ingestLoading, setIngestLoading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("");
   const [uploadLoading, setUploadLoading] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+  const [showIngest, setShowIngest] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // 自动滚动到底部
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // 处理文件上传
   async function handleUpload(e: FormEvent) {
     e.preventDefault();
-
     const file = fileInputRef.current?.files?.[0];
     if (!file) {
       setUploadMessage("请先选择一个文件");
       return;
     }
-
     setUploadLoading(true);
     setUploadMessage("");
-
     try {
       const formData = new FormData();
       formData.append("file", file);
-
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
       const data = await res.json();
       setUploadMessage(data.message || data.error || "操作完成");
       if (res.ok && fileInputRef.current) {
         fileInputRef.current.value = "";
       }
     } catch {
-      setUploadMessage("请求失败，请检查网络连接");
+      setUploadMessage("请求失败");
     } finally {
       setUploadLoading(false);
     }
   }
 
+  // 处理文本入库
   async function handleIngest(e: FormEvent) {
     e.preventDefault();
     if (!ingestText.trim()) return;
-
-    setLoading(true);
-    setMessage("");
-
+    setIngestLoading(true);
+    setIngestMessage("");
     try {
       const res = await fetch("/api/ingest", {
         method: "POST",
@@ -59,318 +67,385 @@ export default function Home() {
         body: JSON.stringify({ content: ingestText }),
       });
       const data = await res.json();
-      setMessage(data.message || data.error || "操作完成");
+      setIngestMessage(data.message || data.error || "操作完成");
       if (res.ok) setIngestText("");
     } catch {
-      setMessage("请求失败，请检查网络连接");
+      setIngestMessage("请求失败");
     } finally {
-      setLoading(false);
+      setIngestLoading(false);
     }
   }
 
-  /**
-   * 处理知识问答
-   */
-  async function handleQuery(e: FormEvent) {
+  // 处理发送消息
+  async function handleSend(e: FormEvent) {
     e.preventDefault();
-    if (!question.trim()) return;
+    if (!input.trim() || loading) return;
 
+    const question = input.trim();
+    setInput("");
     setLoading(true);
-    setAnswer("");
-    setSources([]);
+
+    // 先把用户消息添加到聊天
+    setMessages((prev) => [...prev, { role: "user", content: question }]);
 
     try {
-      const res = await fetch("/api/query", {
+      const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, sessionId }),
       });
       const data = await res.json();
 
       if (res.ok) {
-        setAnswer(data.answer);
-        setSources(data.sources || []);
+        setSessionId(data.sessionId);
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: data.answer,
+            sources: data.sources,
+          },
+        ]);
       } else {
-        setAnswer(data.error || "查询失败");
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: data.error || "查询失败" },
+        ]);
       }
     } catch {
-      setAnswer("请求失败，请检查网络连接");
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "请求失败，请检查网络连接" },
+      ]);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main
+    <div
       style={{
         maxWidth: 800,
         margin: "0 auto",
-        padding: "40px 20px",
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
-      <h1 style={{ fontSize: 28, marginBottom: 8 }}>📚 RAG 知识库</h1>
-      <p
+      {/* ===== 顶部标题栏 ===== */}
+      <div
         style={{
-          color: "#666",
-          marginBottom: 40,
-          fontSize: 14,
-          lineHeight: 1.6,
+          padding: "16px 20px",
+          borderBottom: "1px solid #e0e0e0",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexShrink: 0,
         }}
       >
-        这是一个最简单的 RAG（检索增强生成）入门应用。
-        <br />
-        先往知识库里存入一些文本，然后就可以基于这些文本提问了。
-      </p>
-
-      {/* ===== 文件上传区域 ===== */}
-      <section
-        style={{
-          border: "1px solid #e0e0e0",
-          borderRadius: 8,
-          padding: 24,
-          marginBottom: 24,
-        }}
-      >
-        <h2 style={{ fontSize: 20, marginBottom: 16 }}>📂 文件上传</h2>
-        <p style={{ fontSize: 14, color: "#666", marginBottom: 12 }}>
-          支持上传 .txt 和 .md 文件。文件内容会被自动分块后存入知识库。
-        </p>
-
-        <form onSubmit={handleUpload}>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".txt,.md"
+        <div>
+          <h1 style={{ fontSize: 20, margin: 0 }}>📚 RAG 对话</h1>
+          <p style={{ fontSize: 12, color: "#888", margin: "4px 0 0 0" }}>
+            基于知识库的多轮对话 RAG 系统
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => setShowUpload(!showUpload)}
             style={{
-              width: "100%",
-              padding: 12,
-              fontSize: 14,
+              padding: "6px 12px",
+              fontSize: 12,
+              backgroundColor: showUpload ? "#e0e0e0" : "#f5f5f5",
               border: "1px solid #d0d0d0",
-              borderRadius: 6,
-              boxSizing: "border-box",
+              borderRadius: 4,
               cursor: "pointer",
             }}
-          />
-          <button
-            type="submit"
-            disabled={uploadLoading}
-            style={{
-              marginTop: 12,
-              padding: "10px 24px",
-              fontSize: 14,
-              backgroundColor: uploadLoading ? "#ccc" : "#0070f3",
-              color: "#fff",
-              border: "none",
-              borderRadius: 6,
-              cursor: uploadLoading ? "not-allowed" : "pointer",
-            }}
           >
-            {uploadLoading ? "上传中..." : "上传并入库"}
+            📂 上传文件
           </button>
-        </form>
-
-        {uploadMessage && (
-          <p
+          <button
+            onClick={() => setShowIngest(!showIngest)}
             style={{
-              marginTop: 12,
-              padding: 12,
-              borderRadius: 6,
-              backgroundColor: "#f0f7ff",
-              color: "#0070f3",
-              fontSize: 14,
-            }}
-          >
-            {uploadMessage}
-          </p>
-        )}
-      </section>
-
-      {/* ===== 知识入库区域 ===== */}
-      <section
-        style={{
-          border: "1px solid #e0e0e0",
-          borderRadius: 8,
-          padding: 24,
-          marginBottom: 24,
-        }}
-      >
-        <h2 style={{ fontSize: 20, marginBottom: 16 }}>📥 知识入库</h2>
-        <p style={{ fontSize: 14, color: "#666", marginBottom: 12 }}>
-          把你想让 AI 了解的文本存进来。比如产品说明、技术文档、学习笔记等。
-        </p>
-
-        <form onSubmit={handleIngest}>
-          <textarea
-            value={ingestText}
-            onChange={(e) => setIngestText(e.target.value)}
-            placeholder="输入要存入知识库的文本..."
-            rows={4}
-            style={{
-              width: "100%",
-              padding: 12,
-              fontSize: 14,
+              padding: "6px 12px",
+              fontSize: 12,
+              backgroundColor: showIngest ? "#e0e0e0" : "#f5f5f5",
               border: "1px solid #d0d0d0",
-              borderRadius: 6,
-              resize: "vertical",
-              boxSizing: "border-box",
-            }}
-          />
-          <button
-            type="submit"
-            disabled={loading || !ingestText.trim()}
-            style={{
-              marginTop: 12,
-              padding: "10px 24px",
-              fontSize: 14,
-              backgroundColor: loading ? "#ccc" : "#0070f3",
-              color: "#fff",
-              border: "none",
-              borderRadius: 6,
-              cursor: loading ? "not-allowed" : "pointer",
+              borderRadius: 4,
+              cursor: "pointer",
             }}
           >
-            {loading ? "处理中..." : "存入知识库"}
+            📝 手动入库
           </button>
-        </form>
+        </div>
+      </div>
 
-        {message && (
-          <p
-            style={{
-              marginTop: 12,
-              padding: 12,
-              borderRadius: 6,
-              backgroundColor: "#f0f7ff",
-              color: "#0070f3",
-              fontSize: 14,
-            }}
-          >
-            {message}
-          </p>
-        )}
-      </section>
-
-      {/* ===== 知识问答区域 ===== */}
-      <section
-        style={{
-          border: "1px solid #e0e0e0",
-          borderRadius: 8,
-          padding: 24,
-          marginBottom: 24,
-        }}
-      >
-        <h2 style={{ fontSize: 20, marginBottom: 16 }}>🔍 知识问答</h2>
-        <p style={{ fontSize: 14, color: "#666", marginBottom: 12 }}>
-          基于知识库中的内容来提问。AI 会先搜索相关资料，再给出回答。
-        </p>
-
-        <form onSubmit={handleQuery}>
-          <input
-            type="text"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="输入你的问题..."
-            style={{
-              width: "100%",
-              padding: 12,
-              fontSize: 14,
-              border: "1px solid #d0d0d0",
-              borderRadius: 6,
-              boxSizing: "border-box",
-            }}
-          />
-          <button
-            type="submit"
-            disabled={loading || !question.trim()}
-            style={{
-              marginTop: 12,
-              padding: "10px 24px",
-              fontSize: 14,
-              backgroundColor: loading ? "#ccc" : "#0070f3",
-              color: "#fff",
-              border: "none",
-              borderRadius: 6,
-              cursor: loading ? "not-allowed" : "pointer",
-            }}
-          >
-            {loading ? "思考中..." : "提问"}
-          </button>
-        </form>
-
-        {answer && (
-          <div
-            style={{
-              marginTop: 16,
-              padding: 16,
-              borderRadius: 6,
-              backgroundColor: "#f9f9f9",
-            }}
-          >
-            <h3 style={{ fontSize: 16, marginBottom: 8 }}>🤖 AI 回答</h3>
-            <p
+      {/* ===== 上传区域（可折叠） ===== */}
+      {showUpload && (
+        <div
+          style={{
+            padding: "12px 20px",
+            borderBottom: "1px solid #e0e0e0",
+            backgroundColor: "#fafafa",
+            flexShrink: 0,
+          }}
+        >
+          <form onSubmit={handleUpload} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".txt,.md"
               style={{
-                fontSize: 14,
-                lineHeight: 1.7,
-                whiteSpace: "pre-wrap",
-                color: "#333",
+                flex: 1,
+                padding: 8,
+                fontSize: 13,
+                border: "1px solid #d0d0d0",
+                borderRadius: 4,
+                cursor: "pointer",
+              }}
+            />
+            <button
+              type="submit"
+              disabled={uploadLoading}
+              style={{
+                padding: "8px 16px",
+                fontSize: 13,
+                backgroundColor: uploadLoading ? "#ccc" : "#0070f3",
+                color: "#fff",
+                border: "none",
+                borderRadius: 4,
+                cursor: uploadLoading ? "not-allowed" : "pointer",
+                whiteSpace: "nowrap",
               }}
             >
-              {answer}
+              {uploadLoading ? "上传中..." : "上传"}
+            </button>
+          </form>
+          {uploadMessage && (
+            <p style={{ margin: "8px 0 0", fontSize: 13, color: "#0070f3" }}>
+              {uploadMessage}
             </p>
+          )}
+        </div>
+      )}
 
-            {sources.length > 0 && (
-              <details style={{ marginTop: 16 }}>
-                <summary
-                  style={{
-                    cursor: "pointer",
-                    fontSize: 13,
-                    color: "#666",
-                  }}
-                >
-                  查看参考来源（{sources.length} 条）
-                </summary>
-                <div style={{ marginTop: 8 }}>
-                  {sources.map((src, i) => (
-                    <p
-                      key={i}
-                      style={{
-                        fontSize: 12,
-                        color: "#888",
-                        padding: 8,
-                        backgroundColor: "#fff",
-                        borderRadius: 4,
-                        marginBottom: 4,
-                        border: "1px solid #eee",
-                      }}
-                    >
-                      [{i + 1}] {src}
-                    </p>
-                  ))}
-                </div>
-              </details>
+      {/* ===== 手动入库区域（可折叠） ===== */}
+      {showIngest && (
+        <div
+          style={{
+            padding: "12px 20px",
+            borderBottom: "1px solid #e0e0e0",
+            backgroundColor: "#fafafa",
+            flexShrink: 0,
+          }}
+        >
+          <form onSubmit={handleIngest}>
+            <textarea
+              value={ingestText}
+              onChange={(e) => setIngestText(e.target.value)}
+              placeholder="输入要存入知识库的文本..."
+              rows={3}
+              style={{
+                width: "100%",
+                padding: 8,
+                fontSize: 13,
+                border: "1px solid #d0d0d0",
+                borderRadius: 4,
+                resize: "vertical",
+                boxSizing: "border-box",
+              }}
+            />
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button
+                type="submit"
+                disabled={ingestLoading || !ingestText.trim()}
+                style={{
+                  padding: "8px 16px",
+                  fontSize: 13,
+                  backgroundColor: ingestLoading ? "#ccc" : "#0070f3",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 4,
+                  cursor: ingestLoading ? "not-allowed" : "pointer",
+                }}
+              >
+                {ingestLoading ? "处理中..." : "存入知识库"}
+              </button>
+            </div>
+            {ingestMessage && (
+              <p style={{ margin: "8px 0 0", fontSize: 13, color: "#0070f3" }}>
+                {ingestMessage}
+              </p>
             )}
-          </div>
-        )}
-      </section>
+          </form>
+        </div>
+      )}
 
-      {/* ===== 使用步骤提示 ===== */}
-      <section
+      {/* ===== 消息列表区域（滚动） ===== */}
+      <div
         style={{
-          padding: 20,
-          backgroundColor: "#fafafa",
-          borderRadius: 8,
-          fontSize: 13,
-          color: "#666",
-          lineHeight: 1.8,
+          flex: 1,
+          overflowY: "auto",
+          padding: "16px 20px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
         }}
       >
-        <h3 style={{ fontSize: 16, marginBottom: 8 }}>💡 快速开始</h3>
-        <ol style={{ margin: 0, paddingLeft: 20 }}>
-          <li>确保已配置好 .env.local 文件（OpenAI Key 和数据库连接）</li>
-          <li>在"知识入库"区域输入一些文本，点击存入</li>
-          <li>在"知识问答"区域输入相关问题，点击提问</li>
-          <li>AI 会基于你存入的知识来回答</li>
-        </ol>
-      </section>
-    </main>
+        {messages.length === 0 && (
+          <div
+            style={{
+              textAlign: "center",
+              color: "#999",
+              marginTop: 60,
+              fontSize: 14,
+              lineHeight: 2,
+            }}
+          >
+            <p style={{ fontSize: 40, marginBottom: 8 }}>💬</p>
+            <p>知识库已准备好，开始提问吧！</p>
+            <p style={{ fontSize: 13, color: "#bbb" }}>
+              你也可以先上传文件或手动输入文本到知识库
+            </p>
+          </div>
+        )}
+
+        {messages.map((msg, i) => (
+          <div
+            key={i}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: msg.role === "user" ? "flex-end" : "flex-start",
+            }}
+          >
+            <div
+              style={{
+                maxWidth: "80%",
+                padding: "10px 14px",
+                borderRadius: 12,
+                backgroundColor:
+                  msg.role === "user" ? "#0070f3" : "#f0f0f0",
+                color: msg.role === "user" ? "#fff" : "#333",
+                fontSize: 14,
+                lineHeight: 1.6,
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {msg.role === "user" ? (
+                msg.content
+              ) : (
+                <>
+                  <div>{msg.content}</div>
+                  {msg.sources && msg.sources.length > 0 && (
+                    <details style={{ marginTop: 8 }}>
+                      <summary
+                        style={{
+                          cursor: "pointer",
+                          fontSize: 12,
+                          color: "#666",
+                        }}
+                      >
+                        查看参考来源（{msg.sources.length} 条）
+                      </summary>
+                      <div style={{ marginTop: 6 }}>
+                        {msg.sources.map((src, j) => (
+                          <p
+                            key={j}
+                            style={{
+                              fontSize: 11,
+                              color: "#888",
+                              padding: 6,
+                              backgroundColor: "#fff",
+                              borderRadius: 4,
+                              marginBottom: 4,
+                              border: "1px solid #e0e0e0",
+                            }}
+                          >
+                            [{j + 1}] {src}
+                          </p>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </>
+              )}
+            </div>
+            <span
+              style={{
+                fontSize: 11,
+                color: "#aaa",
+                marginTop: 4,
+              }}
+            >
+              {msg.role === "user" ? "你" : "AI"}
+            </span>
+          </div>
+        ))}
+
+        {loading && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "flex-start",
+            }}
+          >
+            <div
+              style={{
+                padding: "10px 14px",
+                borderRadius: 12,
+                backgroundColor: "#f0f0f0",
+                color: "#999",
+                fontSize: 14,
+              }}
+            >
+              思考中...
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* ===== 底部输入栏 ===== */}
+      <div
+        style={{
+          padding: "12px 20px",
+          borderTop: "1px solid #e0e0e0",
+          flexShrink: 0,
+        }}
+      >
+        <form onSubmit={handleSend} style={{ display: "flex", gap: 8 }}>
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="输入你的问题..."
+            style={{
+              flex: 1,
+              padding: "10px 14px",
+              fontSize: 14,
+              border: "1px solid #d0d0d0",
+              borderRadius: 8,
+              outline: "none",
+            }}
+          />
+          <button
+            type="submit"
+            disabled={loading || !input.trim()}
+            style={{
+              padding: "10px 20px",
+              fontSize: 14,
+              backgroundColor: loading || !input.trim() ? "#ccc" : "#0070f3",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              cursor: loading || !input.trim() ? "not-allowed" : "pointer",
+            }}
+          >
+            {loading ? "..." : "发送"}
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }

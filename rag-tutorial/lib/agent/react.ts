@@ -77,7 +77,7 @@ export async function reactAgent(
     console.log(`🤖 ReAct 步骤 ${step + 1}/${maxSteps}`);
 
     const response = await getOpenAI().chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "deepseek-chat",
       messages,
       temperature: 0.3,
     });
@@ -139,7 +139,7 @@ export async function reactAgent(
   // 达到最大步数还没得出结论
 
   const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "deepseek-chat",
     messages: [
       ...messages,
       {

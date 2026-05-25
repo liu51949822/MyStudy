@@ -42,7 +42,7 @@ const pool = new Pool({
  * - id:       自增主键
  * - content:  原始文本内容
  * - embedding: 文本的向量表示（1536 维）
- *              1536 是 OpenAI text-embedding-3-small 模型的输出维度
+ *              1536 是 OpenAI deepseek-embedding 模型的输出维度
  */
 export async function initDB(): Promise<void> {
   const client = await pool.connect();

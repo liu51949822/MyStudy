@@ -24,7 +24,7 @@
 import OpenAI from "openai";
 
 function getOpenAI(): OpenAI {
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY });
 }
 
 const REACT_SYSTEM_PROMPT = `你是一个可以自主思考和行动的 AI 助手。

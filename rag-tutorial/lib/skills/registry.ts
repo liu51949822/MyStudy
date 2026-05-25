@@ -79,10 +79,10 @@ export function getSkill(id: string): Skill | undefined {
 }
 
 /**
- * 获取 OpenAI 客户端
+ * 获取 DeepSeek 客户端
  */
 function getOpenAI(): OpenAI {
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY });
 }
 
 // ========== 注册内建技能 ==========

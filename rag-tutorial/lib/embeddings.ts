@@ -10,12 +10,12 @@
 import OpenAI from "openai";
 
 function getOpenAI(): OpenAI {
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY, baseURL: "https://api.deepseek.com" });
 }
 
 export async function getEmbedding(text: string): Promise<number[]> {
   const response = await getOpenAI().embeddings.create({
-    model: "text-embedding-3-small",
+    model: "deepseek-embedding",
     input: text,
   });
   return response.data[0].embedding;
@@ -63,7 +63,7 @@ export async function askAIWithContext(
   }
 
   const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "deepseek-chat",
     messages,
     tools,
     tool_choice: "auto",
@@ -88,7 +88,7 @@ export async function askAIWithContext(
   }
 
   const finalResponse = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini", messages, temperature: 0.3,
+    model: "deepseek-chat", messages, temperature: 0.3,
   });
   return finalResponse.choices[0]?.message?.content || "抱歉，无法生成回答。";
 }

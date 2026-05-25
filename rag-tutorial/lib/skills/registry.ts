@@ -110,7 +110,7 @@ registerSkill({
       content: `=== 参考资料 ===\n${context || "（无参考资料）"}\n\n=== 用户问题 ===\n${question}`,
     });
     const res = await getOpenAI().chat.completions.create({
-      model: "gpt-4o-mini", messages, temperature: 0.3,
+      model: "deepseek-chat", messages, temperature: 0.3,
     });
     return { answer: res.choices[0]?.message?.content || "抱歉，无法回答。" };
   },
@@ -124,7 +124,7 @@ registerSkill({
   execute: async (input: SkillInput) => {
     const { question, context } = input;
     const res = await getOpenAI().chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "deepseek-chat",
       messages: [
         {
           role: "system",
@@ -154,7 +154,7 @@ registerSkill({
   execute: async (input: SkillInput) => {
     const { question, context } = input;
     const res = await getOpenAI().chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "deepseek-chat",
       messages: [
         {
           role: "system",
@@ -180,7 +180,7 @@ registerSkill({
   execute: async (input: SkillInput) => {
     const { question, context } = input;
     const res = await getOpenAI().chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "deepseek-chat",
       messages: [
         {
           role: "system",

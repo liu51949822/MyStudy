@@ -26,7 +26,7 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { question, sessionId } = body;
+    const { question, sessionId, skillId } = body;
 
     if (!question || typeof question !== "string") {
       return NextResponse.json(
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
 
     // 动态 import：避免构建时 OpenAI 环境变量检查
     const { query } = await import("@/lib/rag");
-    const result = await query(question, sessionId || undefined);
+    const result = await query(question, sessionId || undefined, skillId || "qa");
 
     return NextResponse.json(result);
   } catch (error) {

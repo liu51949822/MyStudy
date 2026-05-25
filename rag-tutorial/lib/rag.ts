@@ -118,7 +118,8 @@ export async function ingest(
  */
 export async function query(
   question: string,
-  sessionId?: string
+  sessionId?: string,
+  skillId: string = "qa"
 ): Promise<{
   answer: string;
   sources: string[];
@@ -166,7 +167,7 @@ export async function query(
 
   // 步骤 4: AI 基于资料和历史回答问题
   console.log("🤖 AI 正在思考...");
-  const answer = await askAIWithContext(question, context, history);
+  const answer = await askAIWithContext(question, context, history, true, skillId);
 
   // 步骤 5: 保存本轮问答到历史
   addMessage(sessionId, "user", question);

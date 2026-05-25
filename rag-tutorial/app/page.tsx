@@ -20,6 +20,7 @@ export default function Home() {
   const [uploadLoading, setUploadLoading] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [showIngest, setShowIngest] = useState(false);
+  const [skillId, setSkillId] = useState("qa");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -92,7 +93,7 @@ export default function Home() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, sessionId }),
+        body: JSON.stringify({ question, sessionId, skillId }),
       });
       const data = await res.json();
 
@@ -415,6 +416,24 @@ export default function Home() {
         }}
       >
         <form onSubmit={handleSend} style={{ display: "flex", gap: 8 }}>
+          <select
+            value={skillId}
+            onChange={(e) => setSkillId(e.target.value)}
+            style={{
+              padding: "10px 8px",
+              fontSize: 13,
+              border: "1px solid #d0d0d0",
+              borderRadius: 8,
+              outline: "none",
+              backgroundColor: "#f5f5f5",
+              cursor: "pointer",
+            }}
+          >
+            <option value="qa">📖 问答</option>
+            <option value="summarize">📝 总结</option>
+            <option value="translate">🌐 翻译</option>
+            <option value="analyze">🔍 分析</option>
+          </select>
           <input
             type="text"
             value={input}
